@@ -1,16 +1,21 @@
 from trie_hard_py import PyTrie
 
-trie = PyTrie(["and", "ant", "dad", "do", "dot"])
+trie = PyTrie(["PF-102843 150mg", "PF-137492 50mg", "PF-194328 75mg",
+               "PF-208364 200mg", "PF-211357 25mg", "PF-220156 100mg",
+               "PF-301728 10mg", "Cymbrixal", "Trelvion",
+               "Zyntarel", "Protaxil", "Laxiterin",
+               "Velarix", "Nebaflo", "Cortyphen",
+               "Nexivane", "Dexorin", "Mexitine"])
 
-print(trie.contains("dad"))    # Output: True
-print(trie.contains("don't"))  # Output: False
+print(trie.contains("Zyntarel"))  # Output: True
+print(trie.contains("Zynt"))  # Output: False
 
-print(trie.get("do"))  # Output: do
+print(trie.get("Cortyphen"))  # Output: do
 
 for key, value in trie.iter():
     print(f"{key}: {value}")
 
-for key, value in trie.prefix_search("d"):
+for key, value in trie.prefix_search("PF"):
     print(f"{key}: {value}")
 
-print(trie.prefix_contains("da"))  # Output: True
+print(trie.prefix_contains("Mexit"))  # Output: True
