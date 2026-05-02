@@ -1,21 +1,12 @@
 from trie_hard_py import PyTrie
 
-trie = PyTrie(["PF-102843 150mg", "PF-137492 50mg", "PF-194328 75mg",
-               "PF-208364 200mg", "PF-211357 25mg", "PF-220156 100mg",
-               "PF-301728 10mg", "Cymbrixal", "Trelvion",
-               "Zyntarel", "Protaxil", "Laxiterin",
-               "Velarix", "Nebaflo", "Cortyphen",
-               "Nexivane", "Dexorin", "Mexitine"])
+trie = PyTrie(["dad", "ant", "and", "dot", "do"])
+trie.insert("api/v1", "handler_v1")
+trie["api/v2"] = "handler_v2"
 
-print(trie.contains("Zyntarel"))  # Output: True
-print(trie.contains("Zynt"))  # Output: False
-
-print(trie.get("Cortyphen"))  # Output: do
-
-for key, value in trie.iter():
-    print(f"{key}: {value}")
-
-for key, value in trie.prefix_search("PF"):
-    print(f"{key}: {value}")
-
-print(trie.prefix_contains("Mexit"))  # Output: True
+print(trie.contains("dad"))
+print(trie.get("do"))
+print(trie.keys())
+print(list(trie.prefix_search("api/")))
+print(trie.longest_prefix("api/v2/users"))
+print(trie.fuzzy_match("api/v3", max_distance=1))

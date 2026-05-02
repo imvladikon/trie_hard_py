@@ -1,0 +1,34 @@
+[build-system]
+requires = ["maturin>=1.13,<2"]
+build-backend = "maturin"
+
+[project]
+name = "trie-hard-py"
+version = "0.1.0"
+description = "Fast mutable UTF-8 trie exposed as a Python extension module"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [{ name = "trie-hard-py contributors" }]
+keywords = ["trie", "prefix-search", "rust", "pyo3", "maturin"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Rust",
+    "Topic :: Software Development :: Libraries",
+]
+
+[project.urls]
+Homepage = "https://github.com/imvladikon/trie_hard_py"
+Repository = "https://github.com/imvladikon/trie_hard_py"
+Issues = "https://github.com/imvladikon/trie_hard_py/issues"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+module-name = "trie_hard_py._native"
+python-source = "python"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

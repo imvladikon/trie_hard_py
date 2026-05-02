@@ -1,1 +1,12 @@
-/target
+/target/
+/venv/
+/.venv/
+/dist/
+/build/
+/*.egg-info/
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

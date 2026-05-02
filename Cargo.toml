@@ -2,13 +2,13 @@
 name = "trie_hard_py"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license = "MIT"
+description = "Fast mutable UTF-8 trie exposed as a Python extension module"
+repository = "https://github.com/imvladikon/trie_hard_py"
 
 [dependencies]
-pyo3 = { version = "0.19", features = ["extension-module"] }
-trie-hard = "0.1.0"
+pyo3 = { version = "0.28.3", features = ["extension-module"] }
 
 [lib]
-name = "trie_hard_py"
+name = "_native"
 crate-type = ["cdylib"]

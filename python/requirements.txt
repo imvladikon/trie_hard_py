@@ -1,1 +1,2 @@
-maturin
+maturin>=1.13,<2
+pytest>=9,<10
