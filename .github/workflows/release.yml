@@ -148,7 +148,7 @@ jobs:
 
       - name: Check artifacts
         run: |
-          python -m pip install -U pip twine
+          python -m pip install -U pip twine pkginfo packaging
           python -m twine check dist/*
 
       - name: Create GitHub Release
