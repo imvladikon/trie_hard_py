@@ -1,12 +1,12 @@
 from trie_hard_py import PyTrie
 
-trie = PyTrie(["dad", "ant", "and", "dot", "do"])
-trie.insert("api/v1", "handler_v1")
-trie["api/v2"] = "handler_v2"
+trie = PyTrie(["san antonio", "san diego", "san jose", "serbia", "sertraline"])
+trie.insert("amoxicillin tablet", "RXNORM:308182")
+trie["amoxicillin oral suspension"] = "RXNORM:308189"
 
-print(trie.contains("dad"))
-print(trie.get("do"))
+print(trie.contains("san diego"))
+print(trie.get("amoxicillin tablet"))
 print(trie.keys())
-print(list(trie.prefix_search("api/")))
-print(trie.longest_prefix("api/v2/users"))
-print(trie.fuzzy_match("api/v3", max_distance=1))
+print(list(trie.prefix_search("san ")))
+print(trie.longest_prefix("amoxicillin tablet 500mg"))
+print(trie.fuzzy_match("sertralina", max_distance=1))

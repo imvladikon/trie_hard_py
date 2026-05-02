@@ -12,7 +12,8 @@ The public module is `trie_hard_py`; the Rust extension is packaged as
 - Exact lookup: `get`, `in`, `[]`
 - Ordered iteration over `(key, value)` pairs
 - Prefix search with deterministic lexicographic ordering
-- Longest-prefix matching for router-like workloads
+- Longest-prefix matching for autocomplete, gazetteers, dictionaries, and
+  normalized entity lookup
 - Bounded fuzzy matching by Unicode-aware Levenshtein distance
 - Mutable operations: `insert`, `update`, `remove`, `discard`, `clear`
 - UTF-8 safe keys; traversal is byte-based and keys are accepted as Python `str`
@@ -47,9 +48,11 @@ VIRTUAL_ENV="$PWD/venv" ./venv/bin/maturin develop
 ./venv/bin/python benchmarks/bench_pytrie.py
 ```
 
-The benchmark reports rough RSS deltas for trie construction and for an
-additional Python `dict` created from the same keys. RSS is process-level memory,
-so treat it as a coarse regression signal rather than an exact object-size
+The benchmark uses generated city, country, and medicine-style terms so prefix
+and fuzzy matching resemble autocomplete and entity lookup workloads. It reports
+rough RSS deltas for trie construction and writes local JSON history to
+`benchmarks/results/` for regression comparisons. RSS is process-level memory, so
+treat it as a coarse regression signal rather than an exact object-size
 measurement.
 
 ## Usage
@@ -57,25 +60,28 @@ measurement.
 ```python
 from trie_hard_py import PyTrie
 
-trie = PyTrie(["dad", "ant", "and", "dot", "do"])
+trie = PyTrie(["san antonio", "san diego", "san jose", "serbia", "sertraline"])
 
-assert trie.get("do") == "do"
-assert "dad" in trie
-assert "da" not in trie
+assert trie.get("san diego") == "san diego"
+assert "serbia" in trie
+assert "ser" not in trie
 
-trie.insert("api/v1", "handler_v1")
-trie["api/v2"] = "handler_v2"
+trie.insert("amoxicillin tablet", "RXNORM:308182")
+trie["amoxicillin oral suspension"] = "RXNORM:308189"
 frozen = trie.freeze()
 
-assert list(frozen.prefix_search("api/")) == [
-    ("api/v1", "handler_v1"),
-    ("api/v2", "handler_v2"),
+assert list(frozen.prefix_search("amoxicillin")) == [
+    ("amoxicillin oral suspension", "RXNORM:308189"),
+    ("amoxicillin tablet", "RXNORM:308182"),
 ]
-assert frozen.longest_prefix("api/v2/users") == ("api/v2", "handler_v2")
-assert frozen.fuzzy_match("api/v3", max_distance=1) == ("api/v1", "handler_v1", 1)
+assert frozen.longest_prefix("amoxicillin tablet 500mg") == (
+    "amoxicillin tablet",
+    "RXNORM:308182",
+)
+assert frozen.fuzzy_match("sertralina", max_distance=1) == ("sertraline", "sertraline", 1)
 
-removed = trie.remove("api/v1")
-assert removed == "handler_v1"
+removed = trie.remove("amoxicillin tablet")
+assert removed == "RXNORM:308182"
 ```
 
 ## API
@@ -124,12 +130,13 @@ This keeps iteration deterministic without allocating a map object per node.
 Deleted branches are detached from their parents; arena slots are retained so
 existing node indexes stay stable.
 
-Frozen snapshots use adaptive child lookup. Nodes with high fanout get an
-external 256-bit child mask, so exact lookup checks whether the queried byte is
-present and computes the child offset with `count_ones`, following the same
-rank-by-bitmask idea used by Cloudflare's `trie-hard`. Low-fanout nodes avoid
-the fixed mask cost and use binary search over contiguous children instead.
-Benchmark both mutable and frozen forms for your workload.
+Frozen snapshots path-compress unary chains into radix labels before applying
+adaptive child lookup. Nodes with high fanout get an external 256-bit child
+mask, so exact lookup checks whether the queried byte is present and computes
+the child offset with `count_ones`, following the same rank-by-bitmask idea used
+by Cloudflare's `trie-hard`. Low-fanout nodes avoid the fixed mask cost and use
+binary search over contiguous children instead. Benchmark both mutable and
+frozen forms for your workload.
 
 The current frozen node layout intentionally keeps per-node metadata together.
 An experimental structure-of-arrays layout was tested, but on the benchmark

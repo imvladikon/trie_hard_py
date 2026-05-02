@@ -610,15 +610,17 @@ impl FrozenTrie {
             let mut child_mask =
                 (child_count >= Self::MASK_CHILD_THRESHOLD).then(ByteMask::default);
             for (byte, source_child_index) in &source.children {
+                let (incoming_label, terminal_source_index) =
+                    Self::compressed_child_label(trie, *byte, *source_child_index);
                 if let Some(mask) = &mut child_mask {
-                    mask.insert(*byte);
+                    mask.insert(incoming_label[0]);
                 }
                 let child_frozen_index = frozen.nodes.len();
                 frozen.nodes.push(FrozenNode {
-                    incoming_byte: *byte,
+                    incoming_label: incoming_label.into_boxed_slice(),
                     ..FrozenNode::default()
                 });
-                queue.push((*source_child_index, child_frozen_index));
+                queue.push((terminal_source_index, child_frozen_index));
             }
 
             if let Some(mask) = child_mask {
@@ -628,6 +630,26 @@ impl FrozenTrie {
         }
 
         frozen
+    }
+
+    fn compressed_child_label(
+        trie: &Trie,
+        first_byte: u8,
+        first_source_index: usize,
+    ) -> (Vec<u8>, usize) {
+        let mut label = vec![first_byte];
+        let mut source_index = first_source_index;
+
+        loop {
+            let source = &trie.nodes[source_index];
+            if source.value.is_some() || source.children.len() != 1 {
+                return (label, source_index);
+            }
+
+            let (next_byte, next_source_index) = source.children[0];
+            label.push(next_byte);
+            source_index = next_source_index;
+        }
     }
 
     fn get(&self, key: &str) -> Option<&str> {
@@ -640,7 +662,7 @@ impl FrozenTrie {
     }
 
     fn has_prefix(&self, prefix: &str) -> bool {
-        self.find_node_index(prefix).is_some()
+        self.find_prefix_start(prefix).is_some()
     }
 
     fn len(&self) -> usize {
@@ -666,12 +688,12 @@ impl FrozenTrie {
     }
 
     fn prefix_items(&self, prefix: &str) -> Vec<(String, String)> {
-        let Some(node_index) = self.find_node_index(prefix) else {
+        let Some((node_index, mut collected_prefix)) = self.find_prefix_start(prefix) else {
             return Vec::new();
         };
 
         let mut items = Vec::new();
-        self.collect(node_index, &mut prefix.as_bytes().to_vec(), &mut items);
+        self.collect(node_index, &mut collected_prefix, &mut items);
         items
     }
 
@@ -683,11 +705,22 @@ impl FrozenTrie {
             .map(|value| ("".to_owned(), value.to_string()));
         let mut prefix = Vec::new();
 
-        for byte in query.bytes() {
-            let Some(next_index) = self.child_node_index(node_index, byte) else {
+        let query_bytes = query.as_bytes();
+        let mut offset = 0;
+        while offset < query_bytes.len() {
+            let Some(next_index) = self.child_node_index(node_index, query_bytes[offset]) else {
                 break;
             };
-            prefix.push(byte);
+            let incoming_label = &self.nodes[next_index].incoming_label;
+            let remaining = &query_bytes[offset..];
+            let common_len = common_prefix_len(remaining, incoming_label);
+            prefix.extend_from_slice(&incoming_label[..common_len]);
+
+            if common_len != incoming_label.len() {
+                break;
+            }
+
+            offset += incoming_label.len();
             node_index = next_index;
 
             if let Some(value) = &self.nodes[node_index].value {
@@ -732,10 +765,51 @@ impl FrozenTrie {
 
     fn find_node_index(&self, key: &str) -> Option<usize> {
         let mut node_index = 0;
-        for byte in key.bytes() {
-            node_index = self.child_node_index(node_index, byte)?;
+        let mut offset = 0;
+        let bytes = key.as_bytes();
+
+        while offset < bytes.len() {
+            let child_index = self.child_node_index(node_index, bytes[offset])?;
+            let incoming_label = &self.nodes[child_index].incoming_label;
+            let remaining = &bytes[offset..];
+            if !remaining.starts_with(incoming_label) {
+                return None;
+            }
+            offset += incoming_label.len();
+            node_index = child_index;
         }
         Some(node_index)
+    }
+
+    fn find_prefix_start(&self, prefix: &str) -> Option<(usize, Vec<u8>)> {
+        let mut node_index = 0;
+        let mut offset = 0;
+        let bytes = prefix.as_bytes();
+        let mut collected_prefix = Vec::with_capacity(prefix.len());
+
+        while offset < bytes.len() {
+            let child_index = self.child_node_index(node_index, bytes[offset])?;
+            let incoming_label = &self.nodes[child_index].incoming_label;
+            let remaining = &bytes[offset..];
+
+            if remaining.len() <= incoming_label.len() {
+                if incoming_label.starts_with(remaining) {
+                    collected_prefix.extend_from_slice(incoming_label);
+                    return Some((child_index, collected_prefix));
+                }
+                return None;
+            }
+
+            if !remaining.starts_with(incoming_label) {
+                return None;
+            }
+
+            collected_prefix.extend_from_slice(incoming_label);
+            offset += incoming_label.len();
+            node_index = child_index;
+        }
+
+        Some((node_index, collected_prefix))
     }
 
     fn collect(&self, node_index: usize, prefix: &mut Vec<u8>, items: &mut Vec<(String, String)>) {
@@ -746,10 +820,11 @@ impl FrozenTrie {
 
         for child_offset in 0..node.child_count {
             let child_index = node.first_child + child_offset;
-            let byte = self.nodes[child_index].incoming_byte;
-            prefix.push(byte);
+            let incoming_label = &self.nodes[child_index].incoming_label;
+            let prefix_len = prefix.len();
+            prefix.extend_from_slice(incoming_label);
             self.collect(child_index, prefix, items);
-            prefix.pop();
+            prefix.truncate(prefix_len);
         }
     }
 
@@ -775,39 +850,46 @@ impl FrozenTrie {
 
         for child_offset in 0..node.child_count {
             let child_index = node.first_child + child_offset;
-            let byte = self.nodes[child_index].incoming_byte;
+            let incoming_label = &self.nodes[child_index].incoming_label;
+            let prefix_len = prefix.len();
             let saved_pending = pending_char.clone();
-            prefix.push(byte);
-            pending_char.push(byte);
+            let mut current_row = previous_row.to_vec();
+            let mut should_descend = true;
 
-            match std::str::from_utf8(pending_char) {
-                Ok(char_str) => {
-                    if let Some(character) = single_char(char_str) {
-                        let current_row = levenshtein_row(character, search.query, previous_row);
-                        if current_row
-                            .iter()
-                            .min()
-                            .is_some_and(|distance| *distance <= search.max_distance)
-                        {
-                            pending_char.clear();
-                            self.collect_fuzzy(
-                                child_index,
-                                &current_row,
-                                prefix,
-                                pending_char,
-                                search,
-                            );
+            for byte in incoming_label {
+                prefix.push(*byte);
+                pending_char.push(*byte);
+
+                match std::str::from_utf8(pending_char) {
+                    Ok(char_str) => {
+                        if let Some(character) = single_char(char_str) {
+                            current_row = levenshtein_row(character, search.query, &current_row);
+                            if current_row
+                                .iter()
+                                .min()
+                                .is_some_and(|distance| *distance <= search.max_distance)
+                            {
+                                pending_char.clear();
+                            } else {
+                                should_descend = false;
+                                break;
+                            }
                         }
                     }
+                    Err(error) if error.error_len().is_none() => {}
+                    Err(_) => {
+                        should_descend = false;
+                        break;
+                    }
                 }
-                Err(error) if error.error_len().is_none() => {
-                    self.collect_fuzzy(child_index, previous_row, prefix, pending_char, search);
-                }
-                Err(_) => {}
+            }
+
+            if should_descend {
+                self.collect_fuzzy(child_index, &current_row, prefix, pending_char, search);
             }
 
             *pending_char = saved_pending;
-            prefix.pop();
+            prefix.truncate(prefix_len);
         }
     }
 
@@ -820,19 +902,37 @@ impl FrozenTrie {
 
         let child_slice = &self.nodes[node.first_child..node.first_child + node.child_count];
         let rank = child_slice
-            .binary_search_by_key(&byte, |child| child.incoming_byte)
+            .binary_search_by_key(&byte, |child| child.first_label_byte())
             .ok()?;
         Some(node.first_child + rank)
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 struct FrozenNode {
-    incoming_byte: u8,
+    incoming_label: Box<[u8]>,
     value: Option<StoredValue>,
     child_mask_index: Option<usize>,
     first_child: usize,
     child_count: usize,
+}
+
+impl FrozenNode {
+    fn first_label_byte(&self) -> u8 {
+        self.incoming_label[0]
+    }
+}
+
+impl Default for FrozenNode {
+    fn default() -> Self {
+        Self {
+            incoming_label: Box::new([]),
+            value: None,
+            child_mask_index: None,
+            first_child: 0,
+            child_count: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -932,6 +1032,13 @@ fn single_char(value: &str) -> Option<char> {
     let mut chars = value.chars();
     let character = chars.next()?;
     chars.next().is_none().then_some(character)
+}
+
+fn common_prefix_len(left: &[u8], right: &[u8]) -> usize {
+    left.iter()
+        .zip(right)
+        .take_while(|(left_byte, right_byte)| left_byte == right_byte)
+        .count()
 }
 
 #[cfg(test)]
@@ -1045,6 +1152,46 @@ mod tests {
         assert_eq!(
             frozen.fuzzy_search("мед", 1, 1),
             vec![("мёд".to_owned(), "мёд".to_owned(), 1)]
+        );
+    }
+
+    #[test]
+    fn frozen_trie_compresses_unary_paths_without_losing_prefix_queries() {
+        let mut trie = Trie::default();
+        for key in [
+            "san antonio",
+            "san diego",
+            "san jose",
+            "amoxicillin tablet",
+            "амоксициллин",
+        ] {
+            trie.insert(key, key.to_owned());
+        }
+
+        let frozen = FrozenTrie::from_trie(&trie);
+
+        assert!(frozen.nodes.len() < trie.nodes.len());
+        assert_eq!(frozen.get("amoxicillin tablet"), Some("amoxicillin tablet"));
+        assert_eq!(frozen.get("amoxicillin"), None);
+        assert!(frozen.has_prefix("san "));
+        assert_eq!(
+            frozen.prefix_items("san "),
+            vec![
+                ("san antonio".to_owned(), "san antonio".to_owned()),
+                ("san diego".to_owned(), "san diego".to_owned()),
+                ("san jose".to_owned(), "san jose".to_owned()),
+            ]
+        );
+        assert_eq!(
+            frozen.longest_prefix("amoxicillin tablet 500mg"),
+            Some((
+                "amoxicillin tablet".to_owned(),
+                "amoxicillin tablet".to_owned()
+            ))
+        );
+        assert_eq!(
+            frozen.fuzzy_search("амоксицилин", 1, 1),
+            vec![("амоксициллин".to_owned(), "амоксициллин".to_owned(), 1)]
         );
     }
 }
