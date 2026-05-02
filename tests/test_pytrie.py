@@ -1,6 +1,11 @@
 import pytest
 
+import trie_hard_py
 from trie_hard_py import PyTrie
+
+
+def test_package_exports_version():
+    assert trie_hard_py.__version__ == "0.1.0"
 
 
 def test_constructor_lookup_and_ordering():

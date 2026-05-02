@@ -1,5 +1,7 @@
 from collections.abc import Iterator
 
+__version__: str
+
 class PyTrie:
     def __init__(self, items: list[str] | None = None) -> None: ...
     def get(self, key: str) -> str | None: ...
